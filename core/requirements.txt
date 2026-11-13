@@ -1,0 +1,7 @@
+# Dependencies for the deep-learning pipeline.
+# The full project dependency list is maintained at the repository root (../requirements.txt).
+torch>=2.0
+numpy>=1.24
+rasterio>=1.3
+scikit-learn>=1.2
+tqdm>=4.65
