@@ -1,125 +1,108 @@
-# Pixel-Level Vehicle Trafficability on the Taixi Plain
+# 台西平原相对交通适宜性筛查：U-net 与 SegFormer 代码说明
 
-Code accompanying the manuscript *Pixel-Level Vehicle Trafficability on the Taixi Plain
-Using Multi-Channel Remote-Sensing Indicators and CNN–Transformer Dual Models*.
+本项目使用 **U-net（CNN）** 与 **SegFormer（Transformer）** 对13通道遥感特征进行像素级三分类，用于相对交通适宜性筛查、参考标签比较和模型机制诊断。
 
-The project performs pixel-level semantic segmentation of thirteen remote-sensing channels
-over the western coastal plain (Taixi) to grade vehicle trafficability into three classes.
-Two network families are implemented from scratch in PyTorch — a U-net (CNN) and a
-SegFormer-B0 (Transformer) — together with the code that builds an independent mechanistic
-label, runs random-forest and SVM baselines, and reproduces the analysis figures and tables.
+> 输出不是绝对承载力、设计荷载或指定车辆的 Go/No-Go 结论。AHP/机理标签属于参考或代理标签，不能替代现场 cone index、CBR、平板承载或车辆通行试验。
 
-## What the labels are (and are not)
+## 1. 当前英文稿采用的实验协议
 
-Two labels are used, and the distinction matters when reading the metrics:
+### 全岛 AHP 参考标签实验
 
-- **AHP weak label.** A three-level grade produced from the analytic hierarchy process over
-  terrain, hydrology and land-use indicators. It is a rule-based weak label, so a high score
-  measures pixel-level *reproduction* of that label rather than independently established truth.
-- **Bekker–Wong mechanistic label.** A rated cone index (RCI) estimated from standalone
-  OpenLandMap soil parameters under a terramechanics model and then split with Jenks natural
-  breaks. It is an empirical reference, not an in-situ measurement. It shares the OpenLandMap
-  product family with two input channels but draws on five bands absent from the network input;
-  a linear regression of RCI on the input returns only R² = 0.4366, indicating that it carries
-  information not determined by the input.
+| 项目 | 当前口径 |
+|---|---|
+| 输入 | 13通道，128×128完全有效瓦片 |
+| 有效瓦片 | 2,045 |
+| 训练/验证/测试 | 1,232 / 414 / 399 |
+| 模型 | U-net、SegFormer B0、SegFormer B2 |
+| 随机种子 | 42、123、2024；每个种子分别训练和评估 |
+| 优化 | Adam，初始学习率1e-4，未加权多类交叉熵 |
+| 训练 | 最多30 epochs；按验证集 macro-F1 保存最佳状态 |
+| 全岛 batch size | 16 |
+| 数据增强 | 水平/垂直翻转及90°整数倍旋转；不包含其他已删除增强 |
+| 划分性质 | 确定性哈希分配，不是空间阻塞或空间独立验证 |
 
-No in-situ cone, plate-loading or vehicle-bogging measurements have yet been obtained, so
-neither label is treated as mechanical ground truth. The least-cost route-planning module is
-defined conceptually but not executed and is left as future work.
+### 共同域参考标签比较
 
-## Repository layout
+| 项目 | 当前口径 |
+|---|---|
+| 瓦片 | 771；546训练、225验证 |
+| 测试集 | 无独立测试集；结果为共同域验证比较 |
+| 模型 | U-net、SegFormer、RF、RBF-SVM |
+| batch size | U-net 16；SegFormer 32 |
+| 结果解释 | 验证集参与最佳状态选择，不冒充独立测试精度 |
 
-```
-.
-├── core/                       # Deep-learning pipeline
-│   ├── config.py               # Paths, channel order, patch and training hyperparameters
-│   ├── data_utils.py           # GeoTIFF reading, patching, spatial split, augmentation, Dataset
-│   ├── unet.py                 # U-net (encoder–decoder with skip connections)
-│   ├── segformer.py            # SegFormer-B0 (MiT stages + all-MLP decoder)
-│   ├── metrics.py              # Confusion matrix, OA, Kappa, PA/UA, F1, ROC-AUC
-│   ├── train.py                # Generic training entry point
-│   ├── gpu_train.py            # Full-scale GPU training entry point
-│   ├── common_train.py         # Common-domain training for both labels
-│   ├── real_train.py           # Real-data training entry point
-│   ├── smoke_test.py           # Synthetic end-to-end check (no GeoTIFF needed)
-│   └── requirements.txt
-├── analysis/                   # Baselines, diagnostics and figure scripts
-├── soil/                       # Mechanistic-label construction and soil-mask checks
-├── data/                       # Place input/derived rasters and arrays here (not redistributed)
-├── outputs/                    # Weights, confusion matrices, reports and figures are written here
-└── export_soil_physical_raw.js # Google Earth Engine export of the raw physical soil bands
-```
+### 网络与校正RCI
 
-## Environment
+- U-net：9个 DoubleConv，共18个3×3卷积，加1个1×1输出卷积，总计19层。
+- SegFormer：首段7×7/stride 4，后三段3×3/stride 2；输入13通道，直接输出3类。
+- 校正机理链：`MC(%) = W33 × 1000 / BD`，`RCI = exp(c1 − c2 ln MC)`；不额外添加SOC或remolding乘子。
+- OpenLandMap使用表层 `b0`；BD按源产品换算为 kg/m³。W33仅为水分状态代理，不是同期实测含水率。
+- 四个深层水文字段仍保留 `source units`，不能根据口头量纲线索统一补写正式单位。
 
-Python 3.10 or newer is recommended.
+## 2. 代码目录与版本边界
 
-CPU-only setup:
-
-```
-python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -r requirements.txt
+```text
+trafficability_dl/
+├── config.py        # 早期通用配置；其中部分默认值不是最终论文协议
+├── data_utils.py    # GeoTIFF读取、切片、Dataset及通用数据处理
+├── unet.py          # 19层U-net实现
+├── segformer.py     # SegFormer MiT编码器与MLP解码器
+├── metrics.py       # 混淆矩阵、OA、Kappa、PA/UA、F1、AUC
+├── train.py         # 通用训练入口，不等于最终全岛九次实验驱动
+├── real_train.py    # 早期真实数据流程与调试入口
+├── smoke_test.py    # 合成数据自检，不生成论文结果
+└── requirements.txt
 ```
 
-With an NVIDIA GPU, install a CUDA-matched build of PyTorch from <https://pytorch.org>, then
-install the remaining dependencies. CUDA and automatic mixed precision are enabled without code
-changes when a GPU is available.
+**重要限制：** 当前目录尚未定位到一个完整覆盖“全岛三模型 × 三种子 × 1,232/414/399划分”的最终训练入口，也未集中包含全部最终划分清单、权重和 canonical 输出。因此，不能把本目录描述为已经一键复现论文全部实验。`config.py`、`train.py` 或 `real_train.py` 中若仍出现256×256、batch 20、50 epochs、空间7:3或旧阈值，均属于早期通用/调试口径，不能覆盖上表中的最终协议。
 
-Verify the installation with the synthetic smoke test, which needs no real data:
+在公开声称完全可复现前，应补齐：
 
+1. 最终三模型三种子的统一训练驱动与固定配置；
+2. 1,232/414/399及546/225瓦片索引或可再生分配文件；
+3. 最终权重、canonical混淆矩阵和评价输出的一一对应关系；
+4. Figure 6–8及配对10,000次瓦片bootstrap的生成入口；
+5. 环境版本、依赖锁文件和运行说明。
+
+## 3. 输入数据
+
+特征GeoTIFF应为13波段、30 m、float32，研究区外为nodata。波段顺序为：
+
+`NLI, NBD, NCLAY, NSAL, NAI, NSI, NCUR, NDW, NWDI, NSAR, NLST, NVFI, NLULC`
+
+标签取值为0/1/2，对应相对低/中/高等级。连续AHP分数需按当前稿件的Jenks流程重新计算，不应沿用早期固定阈值。共同域实验复用companion研究的13通道输入和连续BCI，但本文重新计算Jenks并训练模型，不复用其图表。
+
+大型派生标签栅格不在轻量Zenodo归档中；第三方数据仍受原始来源的访问和再分发条件约束。
+
+## 4. 通用自检与训练
+
+安装依赖后可运行合成数据自检：
+
+```bash
+python smoke_test.py
 ```
-python core/smoke_test.py
+
+通用训练入口为：
+
+```bash
+python train.py --model unet
+python train.py --model segformer
 ```
 
-## Data
+这些命令只说明通用代码的使用方式。运行前必须显式核对数据路径、通道顺序、标签、补丁大小、划分文件、batch size、epoch和seed；不能用早期默认配置直接复现并声称得到论文最终结果。
 
-The repository contains code only; the large raster and array files are not redistributed here.
-Place them under `data/` (see `data/README.md` for the expected file names). The remote-sensing
-indicators come from Google Earth Engine and the soil physical properties from OpenLandMap; both
-are public sources, and the GEE export script is included. Restricted third-party
-engineering-geological materials are not included and must be requested from the original provider.
+## 5. 结果解释与评价边界
 
-All paths are repository-relative. By default the scripts read from `data/` and write to
-`outputs/`. The locations can be redirected without editing code through the `TRAFFIC_DATA` and
-`TRAFFIC_OUT` environment variables.
+- OA、Kappa、PA/UA、F1和AUC首先衡量对参考标签的复现程度，不是独立机械真值验证。
+- 共同域验证集参与模型选择，不能写成held-out test。
+- 空间置换仅为单种子、单分配机制诊断，不能推广为所有CNN或Transformer的普遍规律。
+- 水文记录用于敏感性分析；共享坐标不是唯一井号，记录级p值未建模同位置聚类。
+- 绝对车辆通行判断仍需现场CI/CBR/平板承载、同期水分、车辆参数和仪器化通行试验。
 
-## Reproducing the workflow
+## 6. 公开链接
 
-1. Build the mechanistic label (continuous RCI and three-class raster):
-   ```
-   python soil/build_mech_label.py
-   ```
-2. Prepare the common-domain tiles, then train both models on each label:
-   ```
-   python analysis/prep_common_domain.py
-   python core/common_train.py --label both --model both
-   ```
-   For the full-scale GPU run:
-   ```
-   python core/gpu_train.py --model both
-   ```
-3. Train the random-forest and SVM baselines:
-   ```
-   python analysis/train_rf_svm.py
-   ```
-4. Run the diagnostics and plotting scripts in `analysis/` to reproduce the reported tables and
-   figures (label consistency, linear explainability, spatial maps, convergence and RCI drivers).
+- GitHub：https://github.com/zishu206/trafficability-taixi
+- Zenodo概念DOI：https://doi.org/10.5281/zenodo.24189358
+- Zenodo v1.0.0版本DOI：https://doi.org/10.5281/zenodo.24189361
 
-Default hyperparameters match the manuscript: 256×256 patches, a 70/30 spatial split, Adam at
-1e-4 with weight decay 1e-5, batch size 20 and 50 epochs for the generic entry point. The best
-checkpoint is selected by validation macro-F1.
-
-## Outputs
-
-`outputs/` receives model checkpoints (`.pth`), confusion matrices (`.csv`), text reports
-(`.txt`) and figures (`.png`). Confusion matrices are written with row and column totals and can
-be opened directly in a spreadsheet.
-
-## Citation
-
-A citation entry will be added once the manuscript is assigned its article identifier. The
-repository is archived on Zenodo for a stable, citable DOI.
-
-## License
-
-The code is released under the MIT License; see [LICENSE](LICENSE).
+本地说明更新不等于公开GitHub或Zenodo已经同步；公开状态应以实际提交和release记录为准。

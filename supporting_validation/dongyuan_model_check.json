@@ -1,0 +1,56 @@
+{
+  "well_name": "Dongyuan",
+  "station_id": "DHW-08",
+  "common_domain_patch_index": 247,
+  "tile_grid_row": 32,
+  "tile_grid_column": 37,
+  "within_tile_row": 7,
+  "within_tile_column": 100,
+  "split": "validation",
+  "results": [
+    {
+      "label": "ahp",
+      "weight_file": "common_ahp_unet.pth",
+      "target_class": 2,
+      "predicted_class": 2,
+      "probabilities": [
+        0.002441,
+        0.006551,
+        0.991008
+      ]
+    },
+    {
+      "label": "ahp",
+      "weight_file": "common_ahp_segformer.pth",
+      "target_class": 2,
+      "predicted_class": 2,
+      "probabilities": [
+        7.6e-05,
+        0.003145,
+        0.996779
+      ]
+    },
+    {
+      "label": "corrected_mech",
+      "weight_file": "common_mech_corrected_unet.pth",
+      "target_class": 0,
+      "predicted_class": 0,
+      "probabilities": [
+        0.722494,
+        0.257233,
+        0.020274
+      ]
+    },
+    {
+      "label": "corrected_mech",
+      "weight_file": "common_mech_corrected_segformer.pth",
+      "target_class": 0,
+      "predicted_class": 0,
+      "probabilities": [
+        0.678263,
+        0.274272,
+        0.047464
+      ]
+    }
+  ]
+}

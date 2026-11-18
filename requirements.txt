@@ -1,13 +1,8 @@
-# Core deep-learning dependencies
+# 道路车辆通行能力双模型训练依赖
+# 安装：python -m pip install -r requirements.txt
+# 若仅用 CPU，可先去 https://pytorch.org 按本机情况选择 CPU 版 torch 安装命令
 torch>=2.0
 numpy>=1.24
 rasterio>=1.3
 scikit-learn>=1.2
 tqdm>=4.65
-
-# Analysis, baseline and plotting dependencies
-matplotlib>=3.6
-mapclassify>=2.5
-scipy>=1.10
-pyshp>=2.3
-pillow>=9.5
